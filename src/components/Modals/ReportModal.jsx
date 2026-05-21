@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, Camera, Send, AlertTriangle, CheckCircle } from 'lucide-react';
+import { X, MapPin, Camera, Send, AlertTriangle, CheckCircle, Sparkles } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { useApp } from '../../context/AppContext';
-import { DISASTER_TYPES, MUNICIPALITIES, MUNICIPALITY_COORDINATES } from '../../data/mockData';
+import { analyzeReport } from '../../lib/ai';
+import { DISASTER_TYPES, MUNICIPALITIES, MUNICIPALITY_COORDINATES, BARANGAY_COORDINATES } from '../../data/mockData';
 
 function MapPanner({ coords }) {
   const map = useMap();
@@ -23,6 +24,34 @@ const pinIcon = L.divIcon({
   iconAnchor: [10, 10],
 });
 
+function findLocalBarangay(municipality, barangay) {
+  const mData = BARANGAY_COORDINATES[municipality];
+  if (!mData) return null;
+  const lower = barangay.toLowerCase().trim();
+  const exactKey = Object.keys(mData).find(k => k.toLowerCase() === lower);
+  if (exactKey) return mData[exactKey];
+  const partialKey = Object.keys(mData).find(
+    k => k.toLowerCase().includes(lower) || lower.includes(k.toLowerCase())
+  );
+  return partialKey ? mData[partialKey] : null;
+}
+
+function coordsAreClose([lat1, lng1], [lat2, lng2], threshold = 0.15) {
+  return Math.abs(lat1 - lat2) < threshold && Math.abs(lng1 - lng2) < threshold;
+}
+
+function findNearestBarangay(municipality, lat, lng) {
+  const mData = BARANGAY_COORDINATES[municipality];
+  if (!mData) return '';
+  let nearest = '';
+  let minDist = Infinity;
+  for (const [name, [bLat, bLng]] of Object.entries(mData)) {
+    const dist = (lat - bLat) ** 2 + (lng - bLng) ** 2;
+    if (dist < minDist) { minDist = dist; nearest = name; }
+  }
+  return nearest;
+}
+
 export default function ReportModal({ onClose }) {
   const { state, dispatch } = useApp();
   const { currentUser } = state;
@@ -35,13 +64,20 @@ export default function ReportModal({ onClose }) {
     description: '',
     municipality: currentUser?.municipality || '',
     barangay: '',
+    street: '',
     location: '',
+    priority: '',
     coordinates: MUNICIPALITY_COORDINATES[currentUser?.municipality] || [12.85, 123.98],
   });
   const [errors, setErrors] = useState({});
   const [locating, setLocating] = useState(false);
   const [geocoded, setGeocoded] = useState(false);
+  const [pinAddress, setPinAddress] = useState('');
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
   const geocodeTimer = useRef(null);
+  const isReversingRef = useRef(false);
 
   const update = (field, value) => {
     if (field === 'municipality') {
@@ -49,30 +85,49 @@ export default function ReportModal({ onClose }) {
       setForm(prev => ({
         ...prev,
         municipality: value,
+        barangay: '',
+        street: '',
         coordinates: base ? [...base] : prev.coordinates,
       }));
       setGeocoded(false);
+      setPinAddress('');
     } else {
       setForm(prev => ({ ...prev, [field]: value }));
-      if (field === 'barangay') setGeocoded(false);
+      if (field === 'barangay' || field === 'street') setGeocoded(false);
     }
     setErrors(prev => ({ ...prev, [field]: undefined }));
+    if (field === 'type') { setAiSuggestion(null); setAiError(''); }
   };
 
   useEffect(() => {
+    if (isReversingRef.current) return;
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
     const barangay = form.barangay.trim();
+    const street = form.street.trim();
     const municipality = form.municipality;
     if (!barangay || !municipality) return;
 
     geocodeTimer.current = setTimeout(async () => {
       setLocating(true);
+      const localCoords = findLocalBarangay(municipality, barangay);
+
+      /* ── Local DB is the authoritative source — use it whenever available ── */
+      if (localCoords) {
+        setForm(prev => ({ ...prev, coordinates: [...localCoords] }));
+        setGeocoded(true);
+        setLocating(false);
+        const label = [street, barangay, municipality].filter(Boolean).join(', ');
+        setPinAddress(label);
+        return;
+      }
+
+      /* ── Barangay not in local DB — fall back to Nominatim ── */
       const queries = [
         `${barangay}, ${municipality}, Sorsogon, Philippines`,
         `Barangay ${barangay}, ${municipality}, Sorsogon, Philippines`,
-        `${barangay} ${municipality} Sorsogon Philippines`,
-        `${barangay}, Sorsogon, Philippines`,
       ];
+      const munCoords = MUNICIPALITY_COORDINATES[municipality];
+
       try {
         let found = null;
         for (const q of queries) {
@@ -81,7 +136,14 @@ export default function ReportModal({ onClose }) {
             { headers: { 'Accept-Language': 'en' } }
           );
           const data = await res.json();
-          if (data.length > 0) { found = data[0]; break; }
+          if (data.length > 0) {
+            const candidate = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+            /* Accept only if within ~15 km of the municipality center */
+            if (!munCoords || coordsAreClose(candidate, munCoords, 0.15)) {
+              found = data[0];
+              break;
+            }
+          }
         }
         if (found) {
           setForm(prev => ({
@@ -90,13 +152,11 @@ export default function ReportModal({ onClose }) {
           }));
           setGeocoded(true);
         } else {
-          const base = MUNICIPALITY_COORDINATES[municipality];
-          if (base) setForm(prev => ({ ...prev, coordinates: [...base] }));
+          if (munCoords) setForm(prev => ({ ...prev, coordinates: [...munCoords] }));
           setGeocoded(false);
         }
       } catch {
-        const base = MUNICIPALITY_COORDINATES[municipality];
-        if (base) setForm(prev => ({ ...prev, coordinates: [...base] }));
+        if (munCoords) setForm(prev => ({ ...prev, coordinates: [...munCoords] }));
         setGeocoded(false);
       } finally {
         setLocating(false);
@@ -104,7 +164,7 @@ export default function ReportModal({ onClose }) {
     }, 700);
 
     return () => clearTimeout(geocodeTimer.current);
-  }, [form.barangay, form.municipality]);
+  }, [form.barangay, form.street, form.municipality]);
 
   const validate = () => {
     const errs = {};
@@ -116,6 +176,70 @@ export default function ReportModal({ onClose }) {
     return Object.keys(errs).length === 0;
   };
 
+  const reverseGeocode = async (lat, lng) => {
+    isReversingRef.current = true;
+    setLocating(true);
+    setForm(prev => ({ ...prev, coordinates: [lat, lng] }));
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      const nearestBarangay = findNearestBarangay(form.municipality, lat, lng);
+      if (data?.address) {
+        const addr = data.address;
+        const street = addr.road || addr.pedestrian || addr.footway || addr.path || '';
+        const city = addr.city || addr.town || addr.municipality || form.municipality;
+        setForm(prev => ({
+          ...prev,
+          coordinates: [lat, lng],
+          ...(street          ? { street }          : {}),
+          ...(nearestBarangay ? { barangay: nearestBarangay } : {}),
+        }));
+        setErrors(prev => ({ ...prev, barangay: undefined }));
+        const label = [street, nearestBarangay, city].filter(Boolean).join(', ');
+        setPinAddress(label);
+      } else if (nearestBarangay) {
+        setForm(prev => ({ ...prev, coordinates: [lat, lng], barangay: nearestBarangay }));
+        setPinAddress([nearestBarangay, form.municipality].filter(Boolean).join(', '));
+      }
+    } catch { /* ignore */ } finally {
+      setLocating(false);
+      setGeocoded(true);
+      setTimeout(() => { isReversingRef.current = false; }, 200);
+    }
+  };
+
+  const handleAiAnalyze = async () => {
+    if (!form.title.trim() || !form.description.trim() || aiLoading) return;
+    setAiLoading(true);
+    setAiError('');
+    setAiSuggestion(null);
+    try {
+      const result = await analyzeReport(form.type, form.title, form.description);
+      setAiSuggestion(result);
+    } catch (err) {
+      setAiError(
+        err.message.includes('not configured')
+          ? '⚠️ AI features require a Gemini API key in .env (VITE_GEMINI_API_KEY).'
+          : `Analysis failed: ${err.message}`
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    setForm(prev => ({
+      ...prev,
+      ...(aiSuggestion.suggestedTitle ? { title: aiSuggestion.suggestedTitle } : {}),
+      ...(aiSuggestion.suggestedPriority ? { priority: aiSuggestion.suggestedPriority } : {}),
+    }));
+    setAiSuggestion(null);
+  };
+
   const handleSubmit = () => {
     if (!validate()) return;
     setSubmitting(true);
@@ -124,7 +248,7 @@ export default function ReportModal({ onClose }) {
         type: 'ADD_REPORT',
         payload: {
           ...form,
-          location: `${form.barangay}, ${form.municipality}`,
+          location: [form.street.trim(), form.barangay, form.municipality].filter(Boolean).join(', '),
           reportedBy: currentUser?.name || 'Anonymous',
           reporterRole: currentUser?.role || 'resident',
         },
@@ -168,7 +292,7 @@ export default function ReportModal({ onClose }) {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2">Incident Type *</label>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {Object.values(DISASTER_TYPES).map(dt => (
+                {Object.values(DISASTER_TYPES).filter(dt => dt.id !== 'earthquake').map(dt => (
                   <button
                     key={dt.id}
                     onClick={() => update('type', dt.id)}
@@ -219,6 +343,92 @@ export default function ReportModal({ onClose }) {
               {errors.description && <p className="text-xs text-red-500 mt-0.5">{errors.description}</p>}
             </div>
 
+            {/* AI Analysis */}
+            <div>
+              <div className="flex items-center justify-between">
+                {form.priority && (
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full text-white ${
+                    form.priority === 'critical' ? 'bg-red-600' :
+                    form.priority === 'high' ? 'bg-orange-500' :
+                    form.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
+                  }`}>
+                    <Sparkles className="w-2.5 h-2.5" />
+                    AI Priority: {form.priority.charAt(0).toUpperCase() + form.priority.slice(1)}
+                    <button
+                      onClick={() => setForm(p => ({ ...p, priority: '' }))}
+                      className="ml-1 hover:opacity-70 text-sm leading-none"
+                    >×</button>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleAiAnalyze}
+                  disabled={!form.title.trim() || !form.description.trim() || aiLoading}
+                  className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg transition-colors border border-indigo-100"
+                >
+                  {aiLoading ? (
+                    <span className="inline-block w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  {aiLoading ? 'Analyzing…' : 'Analyze with AI'}
+                </button>
+              </div>
+
+              {aiError && (
+                <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  {aiError}
+                </p>
+              )}
+
+              {aiSuggestion && (
+                <div className="mt-2 bg-indigo-50 border border-indigo-200 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <p className="text-xs font-bold text-indigo-800">AI Analysis</p>
+                  </div>
+                  <p className="text-xs text-gray-700 leading-relaxed">{aiSuggestion.analysis}</p>
+                  {aiSuggestion.keyInfo && (
+                    <div className="bg-white border border-indigo-100 rounded-lg px-2.5 py-2">
+                      <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-0.5">Key Info for Responders</p>
+                      <p className="text-xs text-gray-800">{aiSuggestion.keyInfo}</p>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3 pt-0.5">
+                    <div>
+                      <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wider mb-1">Suggested Title</p>
+                      <p className="text-xs text-gray-900 font-medium leading-snug">{aiSuggestion.suggestedTitle}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wider mb-1">Suggested Priority</p>
+                      <span className={`inline-block text-xs font-bold px-2.5 py-0.5 rounded-full text-white ${
+                        aiSuggestion.suggestedPriority === 'critical' ? 'bg-red-600' :
+                        aiSuggestion.suggestedPriority === 'high' ? 'bg-orange-500' :
+                        aiSuggestion.suggestedPriority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
+                      }`}>
+                        {aiSuggestion.suggestedPriority?.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1 border-t border-indigo-100">
+                    <button
+                      onClick={applyAiSuggestion}
+                      className="flex-1 text-xs font-semibold bg-indigo-700 hover:bg-indigo-800 text-white py-2 rounded-lg transition-colors"
+                    >
+                      Apply Suggestions
+                    </button>
+                    <button
+                      onClick={() => { setAiSuggestion(null); setAiError(''); }}
+                      className="px-4 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Location */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -237,17 +447,44 @@ export default function ReportModal({ onClose }) {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Barangay *</label>
-                <input
-                  type="text"
-                  placeholder="Barangay name..."
-                  value={form.barangay}
-                  onChange={e => update('barangay', e.target.value)}
-                  className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
-                    errors.barangay ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                  }`}
-                />
+                {BARANGAY_COORDINATES[form.municipality] ? (
+                  <select
+                    value={form.barangay}
+                    onChange={e => update('barangay', e.target.value)}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+                      errors.barangay ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <option value="">Select barangay...</option>
+                    {Object.keys(BARANGAY_COORDINATES[form.municipality])
+                      .sort()
+                      .map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="Barangay name..."
+                    value={form.barangay}
+                    onChange={e => update('barangay', e.target.value)}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+                      errors.barangay ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                    }`}
+                  />
+                )}
                 {errors.barangay && <p className="text-xs text-red-500 mt-0.5">{errors.barangay}</p>}
               </div>
+            </div>
+
+            {/* Street */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Street / Purok <span className="font-normal text-gray-400">(Optional)</span></label>
+              <input
+                type="text"
+                placeholder="e.g. Rizal St., Purok 3..."
+                value={form.street}
+                onChange={e => update('street', e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
             </div>
 
             {/* Pin Location Mini-Map */}
@@ -271,10 +508,7 @@ export default function ReportModal({ onClose }) {
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapPanner coords={form.coordinates} />
                     <ClickToPlace
-                      onPlace={(c) => {
-                        setForm(prev => ({ ...prev, coordinates: c }));
-                        setGeocoded(true);
-                      }}
+                      onPlace={([lat, lng]) => reverseGeocode(lat, lng)}
                     />
                     <Marker
                       position={form.coordinates}
@@ -283,18 +517,27 @@ export default function ReportModal({ onClose }) {
                       eventHandlers={{
                         dragend(e) {
                           const { lat, lng } = e.target.getLatLng();
-                          setForm(prev => ({ ...prev, coordinates: [lat, lng] }));
-                          setGeocoded(true);
+                          reverseGeocode(lat, lng);
                         },
                       }}
                     />
                   </MapContainer>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  📍 {form.coordinates[0].toFixed(5)}, {form.coordinates[1].toFixed(5)}
-                  {locating && <span className="ml-2 text-blue-500">Auto-locating…</span>}
-                  {geocoded && !locating && <span className="ml-2 text-green-600">✓ Location set</span>}
-                </p>
+                <div className="mt-1 space-y-0.5">
+                  <p className="text-[10px] text-gray-400">
+                    📍 {form.coordinates[0].toFixed(5)}, {form.coordinates[1].toFixed(5)}
+                    {locating && <span className="ml-2 text-blue-500">Locating…</span>}
+                  </p>
+                  {!locating && pinAddress && (
+                    <p className="text-[11px] font-medium text-gray-700 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-red-500 flex-shrink-0" />
+                      {pinAddress}
+                    </p>
+                  )}
+                  {!locating && !pinAddress && geocoded && (
+                    <p className="text-[10px] text-green-600">✓ Location set</p>
+                  )}
+                </div>
               </div>
             )}
 

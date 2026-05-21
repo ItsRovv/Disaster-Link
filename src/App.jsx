@@ -8,11 +8,17 @@ import AnnouncementPanel from './components/Announcements/AnnouncementPanel';
 import GovDashboard from './components/Dashboard/GovDashboard';
 import ReportModal from './components/Modals/ReportModal';
 import LoginModal from './components/Modals/LoginModal';
+import ReportDetailDrawer from './components/Modals/ReportDetailDrawer';
+import ToastContainer from './components/Toast/ToastContainer';
+import AIChatbot from './components/AI/AIChatbot';
+import { useLiveSimulation } from './hooks/useLiveSimulation';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState('map');
   const [showReportModal, setShowReportModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+
+  useLiveSimulation();
 
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-gray-50">
@@ -67,6 +73,15 @@ function AppContent() {
       {showLoginModal && (
         <LoginModal onClose={() => setShowLoginModal(false)} />
       )}
+
+      {/* Report detail drawer */}
+      <ReportDetailDrawer onNavigateToMap={() => setActiveTab('map')} />
+
+      {/* Toast notifications */}
+      <ToastContainer />
+
+      {/* AI Chatbot */}
+      <AIChatbot />
 
     </div>
   );

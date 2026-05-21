@@ -14,6 +14,8 @@ const initialState = {
     searchQuery: '',
   },
   selectedReport: null,
+  detailReportId: null,
+  toasts: [],
 };
 
 function appReducer(state, action) {
@@ -93,7 +95,23 @@ function appReducer(state, action) {
       };
 
     case 'SELECT_REPORT':
-      return { ...state, selectedReport: action.payload };
+      return {
+        ...state,
+        selectedReport: action.payload,
+        activeFilters: { types: [], statuses: [], municipality: '', searchQuery: '' },
+      };
+
+    case 'OPEN_DETAIL':
+      return { ...state, detailReportId: action.payload };
+
+    case 'CLOSE_DETAIL':
+      return { ...state, detailReportId: null };
+
+    case 'ADD_TOAST':
+      return { ...state, toasts: [action.payload, ...state.toasts].slice(0, 4) };
+
+    case 'REMOVE_TOAST':
+      return { ...state, toasts: state.toasts.filter(t => t.id !== action.payload) };
 
     default:
       return state;

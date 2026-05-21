@@ -1,7 +1,7 @@
 import { formatDistanceToNow, format } from 'date-fns';
 import { Megaphone, AlertTriangle, Info, MapPin, Clock, Building2, Inbox } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { PRIORITY_LEVELS, ROLES } from '../../data/mockData';
+import { PRIORITY_LEVELS, ROLES, DISASTER_TYPES } from '../../data/mockData';
 
 const PRIORITY_ICONS = {
   critical: <AlertTriangle className="w-4 h-4" />,
@@ -25,7 +25,7 @@ function AnnouncementCard({ announcement }) {
   return (
     <div className={`bg-white rounded-xl border border-gray-200 border-l-4 ${borderClass} overflow-hidden hover:shadow-md transition-shadow fade-in`}>
       <div className="p-4">
-        {/* Priority + role badges */}
+        {/* Priority + role + calamity badges */}
         <div className="flex items-center gap-2 flex-wrap mb-2">
           <span
             className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${priority.tailwind.bg} ${priority.tailwind.text}`}
@@ -33,6 +33,23 @@ function AnnouncementCard({ announcement }) {
             {PRIORITY_ICONS[announcement.priority]}
             {priority.label}
           </span>
+          {announcement.calamityType && DISASTER_TYPES[announcement.calamityType] && (
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                DISASTER_TYPES[announcement.calamityType].tailwind.bg
+              } ${
+                DISASTER_TYPES[announcement.calamityType].tailwind.text
+              }`}
+            >
+              <span>{DISASTER_TYPES[announcement.calamityType].icon}</span>
+              {DISASTER_TYPES[announcement.calamityType].label}
+            </span>
+          )}
+          {announcement.calamityType === 'typhoon' && announcement.typhoonSignal && (
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-600 text-white">
+              🌀 Signal No. {announcement.typhoonSignal}
+            </span>
+          )}
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${roleInfo.bg} ${roleInfo.color}`}>
             {roleInfo.label}
           </span>

@@ -20,15 +20,14 @@ const PRIORITY_BADGE = {
 };
 
 /* Shared card — same circle size for every item */
-function AlertCard({ circleContent, circleBg, ping, title, sub, location, badgeLabel, badgeStyle, time, reporter, onClick, critical }) {
+function AlertCard({ circleContent, circleBg, ping, title, sub, location, badgeLabel, badgeStyle, time, reporter, onClick, critical, accentColor }) {
+  const borderCol = accentColor || (critical ? '#dc2626' : '#e5e7eb');
+  const bgCol     = accentColor ? accentColor + '11' : critical ? '#fef2f2' : '#ffffff';
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-start gap-3 p-3 rounded-xl border-2 transition-all text-left group shadow-sm hover:shadow-md ${
-        critical
-          ? 'border-red-400 bg-red-50 hover:border-red-500'
-          : 'border-gray-200 bg-white hover:border-indigo-300'
-      }`}
+      style={{ borderColor: borderCol + (critical ? '' : '66'), backgroundColor: bgCol }}
+      className={`w-full flex items-start gap-3 p-3 rounded-xl border-2 transition-all text-left group shadow-sm hover:shadow-md`}
     >
       {/* Circle — identical size for every card */}
       <div className="relative flex-shrink-0 w-12 h-12">
@@ -64,7 +63,7 @@ function AlertCard({ circleContent, circleBg, ping, title, sub, location, badgeL
 }
 
 export default function NotificationPanel({ onClose, onNavigate }) {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
 
   const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
   const verifiedHazards  = state.reports
@@ -106,9 +105,54 @@ export default function NotificationPanel({ onClose, onNavigate }) {
         {/* Scrollable content */}
         <div className="overflow-y-auto flex-1">
 
-          {/* ── SECTION 1: SEEKING HELP (incident reports) ── */}
-          {verifiedHazards.length > 0 && (
+          {/* ── SECTION 1: OFFICIAL ALERTS (announcements) — shown first ── */}
+          {allAnnouncements.length > 0 && (
             <section>
+              <div className="px-4 pt-3 pb-2 flex items-center gap-1.5 border-b border-gray-100">
+                <Megaphone className="w-3.5 h-3.5 text-indigo-600" />
+                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Official Alerts</p>
+                <span className="ml-auto text-[9px] font-bold bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">
+                  {allAnnouncements.length}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2 p-3">
+                {[...allAnnouncements]
+                  .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                  .map(a => {
+                  const isCritical  = a.priority === 'critical';
+                  const dtype       = a.calamityType ? DISASTER_TYPES[a.calamityType] : null;
+                  const emoji       = dtype ? dtype.icon : isCritical ? '🚨' : '📢';
+                  const circleBg    = dtype ? dtype.color : isCritical ? '#dc2626' : '#4f46e5';
+                  const accentColor = dtype ? dtype.color : null;
+                  const badgeLabel  = dtype ? dtype.label : PRIORITY_LEVELS[a.priority]?.label || a.priority;
+                  const badgeStyle  = dtype
+                    ? `${dtype.tailwind.bg} ${dtype.tailwind.text} ${dtype.tailwind.border}`
+                    : PRIORITY_BADGE[a.priority] || PRIORITY_BADGE.medium;
+                  return (
+                    <AlertCard
+                      key={a.id}
+                      circleContent={emoji}
+                      circleBg={circleBg}
+                      ping={isCritical}
+                      accentColor={accentColor}
+                      critical={isCritical}
+                      title={a.title}
+                      sub={a.affectedAreas?.join(', ')}
+                      badgeLabel={badgeLabel}
+                      badgeStyle={badgeStyle}
+                      time={timeAgo(a.timestamp)}
+                      reporter={a.postedBy}
+                      onClick={() => { onNavigate('announcements'); onClose(); }}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* ── SECTION 2: SEEKING HELP (incident reports) ── */}
+          {verifiedHazards.length > 0 && (
+            <section className="border-t border-gray-100">
               <div className="px-4 pt-3 pb-2 flex items-center gap-1.5 border-b border-gray-100">
                 <Users className="w-3.5 h-3.5 text-rose-600" />
                 <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Seeking Help</p>
@@ -126,6 +170,7 @@ export default function NotificationPanel({ onClose, onNavigate }) {
                       circleContent={dtype?.icon || '⚠️'}
                       circleBg={dtype?.color || '#dc2626'}
                       ping={isCritical}
+                      accentColor={isCritical ? dtype?.color : null}
                       title={r.title}
                       location={`${r.location} · ${r.municipality}`}
                       badgeLabel={dtype?.label || r.type}
@@ -133,46 +178,11 @@ export default function NotificationPanel({ onClose, onNavigate }) {
                       critical={isCritical}
                       time={timeAgo(r.timestamp)}
                       reporter={r.reportedBy}
-                      onClick={() => { onNavigate('map'); onClose(); }}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {/* ── SECTION 2: SENDING HELP (official announcements) ── */}
-          {allAnnouncements.length > 0 && (
-            <section className="border-t border-gray-100">
-              <div className="px-4 pt-3 pb-2 flex items-center gap-1.5 border-b border-gray-100">
-                <Megaphone className="w-3.5 h-3.5 text-indigo-600" />
-                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Official Alerts</p>
-                <span className="ml-auto text-[9px] font-bold bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">
-                  {allAnnouncements.length}
-                </span>
-              </div>
-              <div className="flex flex-col gap-2 p-3">
-                {allAnnouncements.map(a => {
-                  const isCritical = a.priority === 'critical';
-                  const isProvinceWide = a.affectedAreas?.some(
-                    area => area.toLowerCase().includes('all municipalities') || area.toLowerCase().includes('sorsogon province')
-                  );
-                  /* Pick an emoji that reflects the announcement topic */
-                  const emoji = isCritical ? '🚨' : isProvinceWide ? '📢' : '📋';
-                  const circleBg = isCritical ? '#dc2626' : isProvinceWide ? '#7c3aed' : '#2563eb';
-                  return (
-                    <AlertCard
-                      key={a.id}
-                      circleContent={emoji}
-                      circleBg={circleBg}
-                      ping={isCritical}
-                      title={a.title}
-                      sub={a.affectedAreas?.join(', ')}
-                      badgeLabel={PRIORITY_LEVELS[a.priority]?.label || a.priority}
-                      badgeStyle={PRIORITY_BADGE[a.priority] || PRIORITY_BADGE.medium}
-                      time={timeAgo(a.timestamp)}
-                      reporter={a.postedBy}
-                      onClick={() => { onNavigate('announcements'); onClose(); }}
+                      onClick={() => {
+                        dispatch({ type: 'SELECT_REPORT', payload: r });
+                        onNavigate('map');
+                        onClose();
+                      }}
                     />
                   );
                 })}

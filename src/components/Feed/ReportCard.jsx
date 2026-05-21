@@ -53,10 +53,15 @@ export default function ReportCard({ report, compact = false, showActions = fals
   const dt = DISASTER_TYPES[report.type];
   const leftBorderColor = dt?.color || '#6b7280';
 
+  const handleCardClick = compact
+    ? () => dispatch({ type: 'SELECT_REPORT', payload: report })
+    : () => dispatch({ type: 'OPEN_DETAIL', payload: report.id });
+
   return (
     <div
-      className={`bg-white rounded-xl border border-gray-200 overflow-hidden fade-in card-hover ${compact ? 'text-xs' : ''}`}
+      className={`bg-white rounded-xl border border-gray-200 overflow-hidden fade-in card-hover cursor-pointer ${compact ? 'text-xs hover:border-indigo-300 hover:shadow-md transition-all' : 'hover:border-indigo-300'}`}
       style={{ borderLeftWidth: '4px', borderLeftColor: leftBorderColor }}
+      onClick={handleCardClick}
     >
       <div className={compact ? 'p-3' : 'p-4'}>
         {/* Top row: badges */}
@@ -96,7 +101,7 @@ export default function ReportCard({ report, compact = false, showActions = fals
         <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-gray-100">
           {/* Upvote */}
           <button
-            onClick={() => dispatch({ type: 'UPVOTE_REPORT', payload: report.id })}
+            onClick={(e) => { e.stopPropagation(); dispatch({ type: 'UPVOTE_REPORT', payload: report.id }); }}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-indigo-600 transition-colors"
           >
             <ThumbsUp className="w-3.5 h-3.5" />
@@ -108,13 +113,13 @@ export default function ReportCard({ report, compact = false, showActions = fals
           {(showActions || canModerate) && report.status === 'unverified' && (
             <div className="flex gap-1.5">
               <button
-                onClick={() => dispatch({ type: 'VERIFY_REPORT', payload: report.id })}
+                onClick={(e) => { e.stopPropagation(); dispatch({ type: 'VERIFY_REPORT', payload: report.id }); }}
                 className="flex items-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-semibold px-2 py-1 rounded-lg transition-colors border border-green-200"
               >
                 <ShieldCheck className="w-3 h-3" /> Verify
               </button>
               <button
-                onClick={() => dispatch({ type: 'REJECT_REPORT', payload: report.id })}
+                onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REJECT_REPORT', payload: report.id }); }}
                 className="flex items-center gap-1 bg-gray-50 hover:bg-gray-100 text-gray-600 text-xs font-semibold px-2 py-1 rounded-lg transition-colors border border-gray-200"
               >
                 <ShieldX className="w-3 h-3" /> False Alarm
