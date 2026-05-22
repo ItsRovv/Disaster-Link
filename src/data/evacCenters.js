@@ -1,7 +1,7 @@
 export const EVAC_CENTERS = [
   { id: 'ec1',  name: 'Sorsogon Sports Arena',           municipality: 'Sorsogon City', address: 'Salog, Sorsogon City',                      coordinates: [12.9787, 124.0140], capacity: 3000 },
   { id: 'ec2',  name: 'Sorsogon City Gymnasium',         municipality: 'Sorsogon City', address: 'Rizal Street, Sorsogon City',               coordinates: [12.9710, 124.0009], capacity: 1500 },
-  { id: 'ec3',  name: 'Bacon District Evacuation Hall',  municipality: 'Sorsogon City', address: 'Bacon, Sorsogon City',                      coordinates: [13.0528, 124.0222], capacity: 800  },
+  { id: 'ec3',  name: 'Bacon District Evacuation Hall',  municipality: 'Sorsogon City', address: 'Bacon, Sorsogon City',                      coordinates: [13.0394, 124.0411], capacity: 800  },
   { id: 'ec4',  name: 'Bulan Municipal Gymnasium',       municipality: 'Bulan',         address: 'Bulan Proper, Bulan',                       coordinates: [12.6698, 123.8779], capacity: 2000 },
   { id: 'ec5',  name: 'Matnog Covered Court',            municipality: 'Matnog',        address: 'Maharlika Highway, Camcaman, Matnog',       coordinates: [12.5871, 124.0854], capacity: 800  },
   { id: 'ec6',  name: 'Gubat Municipal Gymnasium',       municipality: 'Gubat',         address: 'Manook Street, Poblacion, Gubat',           coordinates: [12.9175, 124.1235], capacity: 1200 },
@@ -15,5 +15,5 @@ export const EVAC_CENTERS = [
   { id: 'ec14', name: 'Sta. Magdalena Elementary School',municipality: 'Sta. Magdalena',address: 'Santa Cruz Street, Sta. Magdalena',         coordinates: [12.6460, 124.1073], capacity: 400  },
   { id: 'ec15', name: 'Juban Municipal Gymnasium',       municipality: 'Juban',         address: 'Poblacion, Juban',                          coordinates: [12.8479, 123.9891], capacity: 700  },
   { id: 'ec16', name: 'Magallanes Covered Court',        municipality: 'Magallanes',    address: 'Magallanes-Juban Road, Magallanes',         coordinates: [12.8283, 123.8346], capacity: 500  },
-  { id: 'ec17', name: 'Castilla Covered Gymnasium',      municipality: 'Castilla',      address: 'Poblacion, Castilla',                       coordinates: [12.9540, 123.8752], capacity: 400  },
+  { id: 'ec17', name: 'Castilla Covered Gymnasium',      municipality: 'Castilla',      address: 'Maharlika Highway, Cumadcad, Castilla',     coordinates: [12.9784, 123.8003], capacity: 400  },
 ];

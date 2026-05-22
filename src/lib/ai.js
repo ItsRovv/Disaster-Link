@@ -1,4 +1,4 @@
-const MODEL = 'gemini-1.5-flash-latest';
+const MODEL = 'gemini-2.0-flash';
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 async function callGemini(systemInstruction, messages, options = {}) {
