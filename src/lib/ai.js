@@ -1,5 +1,5 @@
 const MODEL = 'gemini-1.5-flash';
-const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const BASE_URL = 'https://generativelanguage.googleapis.com/v1/models';
 
 async function callGemini(systemInstruction, messages, options = {}) {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
